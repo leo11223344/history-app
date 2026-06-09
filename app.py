@@ -3,7 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 import datetime 
 import urllib.parse 
-import io # [추가] 사진을 바이트 데이터로 다루기 위한 도구
+import io 
 
 # =========================================================================
 # [시스템 프롬프트] 한자 거부감 완화, 설명 5줄 확장, 구글 이미지 연동 적용
@@ -46,7 +46,7 @@ SEARCH_KEYWORD: [이야기관련 한국어 명사]
 st.set_page_config(page_title="초등학생을 위한 쉬운 역사 사전", page_icon="📜", layout="centered")
 
 today = datetime.datetime.now().strftime("%Y.%m.%d")
-version = "v3.6" 
+version = "v3.7" 
 
 st.title(f"📜 초등학생을 위한 쉬운 역사 사전 ({version} - {today})")
 st.write("선생님에게 교과서 사진을 보여주고 궁금한 걸 물어보세요! 😊")
@@ -58,13 +58,10 @@ except KeyError:
     st.error("앗! 시스템에 API 키가 설정되지 않았습니다. 관리자 페이지(Secrets)를 확인해 주세요.")
     api_key = None
 
-# [핵심 변경] 복잡한 이미지 객체 대신 '바이트 데이터'를 받아서 해싱 에러를 완벽 방지!
 @st.cache_data(show_spinner=False)
 def get_ai_response(image_bytes, prompt_text, key):
     genai.configure(api_key=key)
-    # 전달받은 바이트 데이터를 다시 AI가 읽을 수 있는 이미지로 조립
     img_for_ai = Image.open(io.BytesIO(image_bytes))
-    
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"temperature": 0.3})
     response = model.generate_content([SYSTEM_PROMPT, prompt_text, img_for_ai])
     return response.text
@@ -73,16 +70,43 @@ uploaded_file = st.file_uploader("1️⃣ 여기에 사진을 드래그하거나
 user_question = st.text_input("2️⃣ 특별히 궁금한 게 있나요?", placeholder="질문을 적지 않으면 자동으로 단어 5개를 설명해 줘요!")
 
 if uploaded_file is not None:
-    # 화면에 보여줄 이미지 열기
     image = Image.open(uploaded_file)
     st.image(image, caption="📸 업로드된 교과서 사진", use_container_width=True)
     
-    # [핵심 변경] 스트림릿이 쉽게 외울 수 있도록 사진을 원시 바이트 데이터로 추출
     image_bytes_data = uploaded_file.getvalue()
 
     if st.button("✨ 선생님께 여쭤보기!", type="primary"):
         if api_key:
             with st.spinner("선생님이 교과서를 꼼꼼히 읽고, 재미있는 이야기를 준비 중이에요! 🕵️‍♂️ (처음엔 조금 걸려요!)"):
                 try:
+                    # 따옴표 에러가 났던 부분을 안전하게 수정했습니다!
                     if user_question:
-                        prompt_text = f"학생의 추가 질문: '{user_question}'\n\n지시사항: 먼저 기본 5개 단어를 추출하고, 배경지식 이야기가 있으면 상황에 맞는 러시아 문화로 들려
+                        prompt_text = "학생의 추가 질문: '" + user_question + "'\n\n지시사항: 먼저 기본 5개 단어를 추출하고, 배경지식 이야기가 있으면 상황에 맞는 러시아 문화로 들려준 다음, 마지막 번호로 학생의 질문에 대답해."
+                    else:
+                        prompt_text = "이 사진을 분석해서 다문화 아동이 어려워할 만한 단어를 정확히 5개 찾고, 한국 고유의 역사 이야기가 있다면 상황에 맞게 매칭된 배경지식 스토리텔링도 추가해 줘."
+                    
+                    raw_answer = get_ai_response(image_bytes_data, prompt_text, api_key)
+                    
+                    st.success("짜잔! 설명이 완성되었어요! 🎉")
+                    st.markdown("### 👩‍🏫 친절한 역사 선생님의 맞춤 풀이")
+                    
+                    text_buffer = ""
+                    for line in raw_answer.split('\n'):
+                        if line.startswith("SEARCH_KEYWORD:"):
+                            if text_buffer.strip():
+                                st.markdown(text_buffer)
+                                text_buffer = "" 
+                            
+                            keyword = line.replace("SEARCH_KEYWORD:", "").strip()
+                            if keyword:
+                                encoded_keyword = urllib.parse.quote(keyword)
+                                google_url = f"https://www.google.com/search?tbm=isch&q={encoded_keyword}"
+                                st.info(f"👉 **[🖼️ '{keyword}' 실제 사진 구글에서 찾아보기 (클릭!)]({google_url})**")
+                        else:
+                            text_buffer += line + "\n"
+                    
+                    if text_buffer.strip():
+                        st.markdown(text_buffer)
+                    
+                except Exception as e:
+                    st.error(f"오류가 발생했어요. (에러 내용: {e})")
