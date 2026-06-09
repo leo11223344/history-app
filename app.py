@@ -1,8 +1,9 @@
+```python
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import datetime 
-import urllib.parse # 구글 검색 링크를 만들기 위한 도구 추가
+import urllib.parse 
 
 # =========================================================================
 # [시스템 프롬프트] 한자 거부감 완화, 설명 5줄 확장, 구글 이미지 연동 적용
@@ -57,7 +58,6 @@ except KeyError:
     st.error("앗! 시스템에 API 키가 설정되지 않았습니다. 관리자 페이지(Secrets)를 확인해 주세요.")
     api_key = None
 
-# [핵심 변경] _image_data를 image_data로 변경하여 이미지가 바뀔 때마다 캐시가 갱신되도록 수정!
 @st.cache_data(show_spinner=False)
 def get_ai_response(image_data, prompt_text, key):
     genai.configure(api_key=key)
@@ -108,3 +108,5 @@ if uploaded_file is not None:
                     
                 except Exception as e:
                     st.error(f"오류가 발생했어요. (에러 내용: {e})")
+
+```
