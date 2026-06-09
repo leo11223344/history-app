@@ -45,7 +45,7 @@ SEARCH_KEYWORD: [이야기관련 한국어 명사]
 st.set_page_config(page_title="초등학생을 위한 쉬운 역사 사전", page_icon="📜", layout="centered")
 
 today = datetime.datetime.now().strftime("%Y.%m.%d")
-version = "v3.4" 
+version = "v3.5" 
 
 st.title(f"📜 초등학생을 위한 쉬운 역사 사전 ({version} - {today})")
 st.write("선생님에게 교과서 사진을 보여주고 궁금한 걸 물어보세요! 😊")
@@ -57,11 +57,12 @@ except KeyError:
     st.error("앗! 시스템에 API 키가 설정되지 않았습니다. 관리자 페이지(Secrets)를 확인해 주세요.")
     api_key = None
 
+# [핵심 변경] _image_data를 image_data로 변경하여 이미지가 바뀔 때마다 캐시가 갱신되도록 수정!
 @st.cache_data(show_spinner=False)
-def get_ai_response(_image_data, prompt_text, key):
+def get_ai_response(image_data, prompt_text, key):
     genai.configure(api_key=key)
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"temperature": 0.3})
-    response = model.generate_content([SYSTEM_PROMPT, prompt_text, _image_data])
+    response = model.generate_content([SYSTEM_PROMPT, prompt_text, image_data])
     return response.text
 
 uploaded_file = st.file_uploader("1️⃣ 여기에 사진을 드래그하거나 클릭해서 업로드하세요 🖼️", type=["jpg", "jpeg", "png"])
