@@ -46,7 +46,7 @@ SEARCH_KEYWORD: [이야기관련 한국어 명사]
 st.set_page_config(page_title="초등학생을 위한 쉬운 역사 사전", page_icon="📜", layout="centered")
 
 today = datetime.datetime.now().strftime("%Y.%m.%d")
-version = "v3.7" 
+version = "v3.8" 
 
 st.title(f"📜 초등학생을 위한 쉬운 역사 사전 ({version} - {today})")
 st.write("선생님에게 교과서 사진을 보여주고 궁금한 걸 물어보세요! 😊")
@@ -58,9 +58,10 @@ except KeyError:
     st.error("앗! 시스템에 API 키가 설정되지 않았습니다. 관리자 페이지(Secrets)를 확인해 주세요.")
     api_key = None
 
+# [핵심 해결] key 변수명 앞에 언더바(_)를 붙여서 스트림릿의 메모리 에러를 방지합니다!
 @st.cache_data(show_spinner=False)
-def get_ai_response(image_bytes, prompt_text, key):
-    genai.configure(api_key=key)
+def get_ai_response(image_bytes, prompt_text, _key):
+    genai.configure(api_key=_key)
     img_for_ai = Image.open(io.BytesIO(image_bytes))
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"temperature": 0.3})
     response = model.generate_content([SYSTEM_PROMPT, prompt_text, img_for_ai])
@@ -79,7 +80,6 @@ if uploaded_file is not None:
         if api_key:
             with st.spinner("선생님이 교과서를 꼼꼼히 읽고, 재미있는 이야기를 준비 중이에요! 🕵️‍♂️ (처음엔 조금 걸려요!)"):
                 try:
-                    # 따옴표 에러가 났던 부분을 안전하게 수정했습니다!
                     if user_question:
                         prompt_text = "학생의 추가 질문: '" + user_question + "'\n\n지시사항: 먼저 기본 5개 단어를 추출하고, 배경지식 이야기가 있으면 상황에 맞는 러시아 문화로 들려준 다음, 마지막 번호로 학생의 질문에 대답해."
                     else:
