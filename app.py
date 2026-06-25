@@ -46,7 +46,7 @@ SEARCH_KEYWORD: [이야기관련 한국어 명사]
 st.set_page_config(page_title="초등학생을 위한 쉬운 역사 사전", page_icon="📜", layout="centered")
 
 today = datetime.datetime.now().strftime("%Y.%m.%d")
-version = "v3.8" 
+version = "v3.9 (스트리밍 적용)" 
 
 st.title(f"📜 초등학생을 위한 쉬운 역사 사전 ({version} - {today})")
 st.write("선생님에게 교과서 사진을 보여주고 궁금한 걸 물어보세요! 😊")
@@ -58,14 +58,15 @@ except KeyError:
     st.error("앗! 시스템에 API 키가 설정되지 않았습니다. 관리자 페이지(Secrets)를 확인해 주세요.")
     api_key = None
 
-# [핵심 해결] key 변수명 앞에 언더바(_)를 붙여서 스트림릿의 메모리 에러를 방지합니다!
-@st.cache_data(show_spinner=False)
-def get_ai_response(image_bytes, prompt_text, _key):
-    genai.configure(api_key=_key)
+# [핵심 수정] 스트리밍 함수 정의
+def get_ai_response_stream(image_bytes, prompt_text, key):
+    genai.configure(api_key=key)
     img_for_ai = Image.open(io.BytesIO(image_bytes))
     model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"temperature": 0.3})
-    response = model.generate_content([SYSTEM_PROMPT, prompt_text, img_for_ai])
-    return response.text
+    
+    # stream=True 를 통해 답변을 조각조각 반환하도록 설정
+    response = model.generate_content([SYSTEM_PROMPT, prompt_text, img_for_ai], stream=True)
+    return response
 
 uploaded_file = st.file_uploader("1️⃣ 여기에 사진을 드래그하거나 클릭해서 업로드하세요 🖼️", type=["jpg", "jpeg", "png"])
 user_question = st.text_input("2️⃣ 특별히 궁금한 게 있나요?", placeholder="질문을 적지 않으면 자동으로 단어 5개를 설명해 줘요!")
@@ -78,35 +79,46 @@ if uploaded_file is not None:
 
     if st.button("✨ 선생님께 여쭤보기!", type="primary"):
         if api_key:
-            with st.spinner("선생님이 교과서를 꼼꼼히 읽고, 재미있는 이야기를 준비 중이에요! 🕵️‍♂️ (처음엔 조금 걸려요!)"):
-                try:
-                    if user_question:
-                        prompt_text = "학생의 추가 질문: '" + user_question + "'\n\n지시사항: 먼저 기본 5개 단어를 추출하고, 배경지식 이야기가 있으면 상황에 맞는 러시아 문화로 들려준 다음, 마지막 번호로 학생의 질문에 대답해."
-                    else:
-                        prompt_text = "이 사진을 분석해서 다문화 아동이 어려워할 만한 단어를 정확히 5개 찾고, 한국 고유의 역사 이야기가 있다면 상황에 맞게 매칭된 배경지식 스토리텔링도 추가해 줘."
+            # 로딩 메시지를 스피너에서 안내 문구로 변경 (스트리밍 시 스피너가 방해될 수 있음)
+            st.info("선생님이 교과서를 꼼꼼히 읽고, 재미있는 이야기를 준비 중이에요! 🕵️‍♂️ (잠시만 기다려주세요...)")
+            
+            # [핵심 수정] 텍스트가 실시간으로 채워질 빈 공간 생성
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            try:
+                if user_question:
+                    prompt_text = "학생의 추가 질문: '" + user_question + "'\n\n지시사항: 먼저 기본 5개 단어를 추출하고, 배경지식 이야기가 있으면 상황에 맞는 러시아 문화로 들려준 다음, 마지막 번호로 학생의 질문에 대답해."
+                else:
+                    prompt_text = "이 사진을 분석해서 다문화 아동이 어려워할 만한 단어를 정확히 5개 찾고, 한국 고유의 역사 이야기가 있다면 상황에 맞게 매칭된 배경지식 스토리텔링도 추가해 줘."
+                
+                # [핵심 수정] 제너레이터를 순회하며 텍스트 갱신
+                for chunk in get_ai_response_stream(image_bytes_data, prompt_text, api_key):
+                    full_response += chunk.text
                     
-                    raw_answer = get_ai_response(image_bytes_data, prompt_text, api_key)
-                    
-                    st.success("짜잔! 설명이 완성되었어요! 🎉")
-                    st.markdown("### 👩‍🏫 친절한 역사 선생님의 맞춤 풀이")
-                    
-                    text_buffer = ""
-                    for line in raw_answer.split('\n'):
-                        if line.startswith("SEARCH_KEYWORD:"):
-                            if text_buffer.strip():
-                                st.markdown(text_buffer)
-                                text_buffer = "" 
+                    # 화면 표시용 텍스트 (SEARCH_KEYWORD 태그는 숨김)
+                    display_text = ""
+                    for line in full_response.split('\n'):
+                        if not line.startswith("SEARCH_KEYWORD:"):
+                            display_text += line + "\n"
                             
-                            keyword = line.replace("SEARCH_KEYWORD:", "").strip()
-                            if keyword:
-                                encoded_keyword = urllib.parse.quote(keyword)
-                                google_url = f"https://www.google.com/search?tbm=isch&q={encoded_keyword}"
-                                st.info(f"👉 **[🖼️ '{keyword}' 실제 사진 구글에서 찾아보기 (클릭!)]({google_url})**")
-                        else:
-                            text_buffer += line + "\n"
-                    
-                    if text_buffer.strip():
-                        st.markdown(text_buffer)
-                    
-                except Exception as e:
-                    st.error(f"오류가 발생했어요. (에러 내용: {e})")
+                    # 타이핑 효과를 위한 커서(▌) 추가
+                    message_placeholder.markdown("### 👩‍🏫 친절한 역사 선생님의 맞춤 풀이\n" + display_text + "▌")
+                
+                # 출력이 끝나면 커서 제거
+                message_placeholder.markdown("### 👩‍🏫 친절한 역사 선생님의 맞춤 풀이\n" + display_text)
+                st.success("짜잔! 설명이 완성되었어요! 🎉")
+                
+                # [핵심 수정] 구글 링크 생성 로직은 스트리밍 완료 후 일괄 처리
+                st.markdown("---")
+                st.markdown("#### 🖼️ 사진으로 직접 확인해 볼까요?")
+                for line in full_response.split('\n'):
+                    if line.startswith("SEARCH_KEYWORD:"):
+                        keyword = line.replace("SEARCH_KEYWORD:", "").strip()
+                        if keyword:
+                            encoded_keyword = urllib.parse.quote(keyword)
+                            google_url = f"https://www.google.com/search?tbm=isch&q={encoded_keyword}"
+                            st.info(f"👉 **['{keyword}' 실제 사진 구글에서 찾아보기 (클릭!)]({google_url})**")
+                
+            except Exception as e:
+                st.error(f"오류가 발생했어요. (에러 내용: {e})")
